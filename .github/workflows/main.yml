@@ -1,3 +1,42 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Admin Docker image
+        run: docker build -t ci-cd-admin ./admin
+
+      - name: Build Backend Docker image
+        run: docker build -t ci-cd-backend ./backend
+
+      - name: Build Frontend Docker image
+        run: docker build -t ci-cd-frontend ./frontend
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Admin Docker image
+        run: docker tag ci-cd-admin arturarm/ci-cd-admin:latest && docker push arturarm/ci-cd-admin:latest
+
+      - name: Push Backend Docker image
+        run: docker tag ci-cd-backend arturarm/ci-cd-backend:latest && docker push arturarm/ci-cd-backend:latest
+
+      - name: Push Frontend Docker image
+        run: docker tag ci-cd-frontend arturarm/ci-cd-frontend:latest && docker push arturarm/ci-cd-frontend:latest
+
+
   sonar-local:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -8,26 +47,27 @@
 
       - name: Start SonarQube container
         run: |
+          echo "Starting SonarQube..."
           docker run -d --name sonar \
             -p 9000:9000 \
             -e SONAR_FORCEAUTHENTICATION=false \
-            sonarqube:latest
+            sonarqube:lts-community
+
           echo "Waiting for SonarQube to be ready..."
           for i in {1..40}; do
             STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status' || echo "DOWN")
             echo "Sonar status: $STATUS"
             if [ "$STATUS" = "UP" ]; then
-              echo "SonarQube is ready!"
+              echo "✅ SonarQube is ready!"
               break
             fi
             sleep 5
           done
 
-      - name: Run Sonar Scanner
+      - name: Run SonarQube Scanner
         run: |
+          echo "Running Sonar Scanner..."
           docker run --network host --rm \
             -v "$(pwd):/usr/src" \
             sonarsource/sonar-scanner-cli:latest \
             -Dsonar.projectKey=local-scan \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=http://localhost:9000
