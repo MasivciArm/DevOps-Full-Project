@@ -1,69 +1,21 @@
-name: CI/CD Pipeline
-
-on:
-  push:
-    branches: ["main"]
-
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Build Admin Docker image
-        run: docker build -t ci-cd-admin ./admin
-
-      - name: Build Backend Docker image
-        run: docker build -t ci-cd-backend ./backend
-
-      - name: Build Frontend Docker image
-        run: docker build -t ci-cd-frontend ./frontend
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Push Admin Docker image
-        run: docker tag ci-cd-admin arturarm/ci-cd-admin:latest && docker push arturarm/ci-cd-admin:latest
-
-      - name: Push Backend Docker image
-        run: docker tag ci-cd-backend arturarm/ci-cd-backend:latest && docker push arturarm/ci-cd-backend:latest
-
-      - name: Push Frontend Docker image
-        run: docker tag ci-cd-frontend arturarm/ci-cd-frontend:latest && docker push arturarm/ci-cd-frontend:latest
-
-
   sonar-local:
     runs-on: ubuntu-latest
     needs: build-and-push
-
-    services:
-      sonarqube:
-        image: sonarqube:latest
-        ports:
-          - 9000:9000
-        env:
-          SONAR_FORCEAUTHENTICATION: false
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/api/system/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Wait for SonarQube to start
+      - name: Start SonarQube container
         run: |
-          echo "Waiting for SonarQube..."
-          for i in {1..30}; do
+          docker run -d --name sonar \
+            -p 9000:9000 \
+            -e SONAR_FORCEAUTHENTICATION=false \
+            sonarqube:latest
+          echo "Waiting for SonarQube to be ready..."
+          for i in {1..40}; do
             STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status' || echo "DOWN")
-            echo "Status: $STATUS"
+            echo "Sonar status: $STATUS"
             if [ "$STATUS" = "UP" ]; then
               echo "SonarQube is ready!"
               break
@@ -71,7 +23,7 @@ jobs:
             sleep 5
           done
 
-      - name: Run SonarQube analysis
+      - name: Run Sonar Scanner
         run: |
           docker run --network host --rm \
             -v "$(pwd):/usr/src" \
