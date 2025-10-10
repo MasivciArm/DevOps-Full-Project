@@ -36,3 +36,40 @@ jobs:
       - name: Push Frontend Docker image
         run: docker tag ci-cd-frontend arturarm/ci-cd-frontend:latest && docker push arturarm/ci-cd-frontend:latest
 
+
+  sonar-local:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start local SonarQube
+        run: |
+          docker network create sonar-net
+          docker run -d --name sonarqube \
+            --network sonar-net \
+            -p 9000:9000 \
+            sonarqube:latest
+
+          echo "Waiting for SonarQube to be ready..."
+          for i in {1..40}; do
+            STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status' || echo "NONE")
+            if [ "$STATUS" = "UP" ]; then
+              echo "SonarQube is ready!"
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Run local Sonar Scanner
+        run: |
+          docker run --rm \
+            --network sonar-net \
+            -v "$(pwd):/usr/src" \
+            sonarsource/sonar-scanner-cli:latest \
+            -Dsonar.projectKey=my-local-project \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=http://sonarqube:9000 \
+            -Dsonar.login=admin \
+            -Dsonar.password=admin
