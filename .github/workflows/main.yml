@@ -5,9 +5,9 @@ on:
     branches: ["main"]
 
 jobs:
-  build-and-test:
+  build-and-push:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -39,22 +39,31 @@ jobs:
 
   sonar-local:
     runs-on: ubuntu-latest
+    needs: build-and-push
+
+    services:
+      sonarqube:
+        image: sonarqube:latest
+        ports:
+          - 9000:9000
+        env:
+          SONAR_FORCEAUTHENTICATION: false
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/api/system/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Start local SonarQube
+      - name: Wait for SonarQube to start
         run: |
-          docker network create sonar-net
-          docker run -d --name sonarqube \
-            --network sonar-net \
-            -p 9000:9000 \
-            sonarqube:latest
-
-          echo "Waiting for SonarQube to be ready..."
-          for i in {1..40}; do
-            STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status' || echo "NONE")
+          echo "Waiting for SonarQube..."
+          for i in {1..30}; do
+            STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status' || echo "DOWN")
+            echo "Status: $STATUS"
             if [ "$STATUS" = "UP" ]; then
               echo "SonarQube is ready!"
               break
@@ -62,14 +71,11 @@ jobs:
             sleep 5
           done
 
-      - name: Run local Sonar Scanner
+      - name: Run SonarQube analysis
         run: |
-          docker run --rm \
-            --network sonar-net \
+          docker run --network host --rm \
             -v "$(pwd):/usr/src" \
             sonarsource/sonar-scanner-cli:latest \
-            -Dsonar.projectKey=my-local-project \
+            -Dsonar.projectKey=local-scan \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://sonarqube:9000 \
-            -Dsonar.login=admin \
-            -Dsonar.password=admin
+            -Dsonar.host.url=http://localhost:9000
